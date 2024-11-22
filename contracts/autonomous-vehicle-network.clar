@@ -75,27 +75,21 @@
     (
       (new-ride-id (+ (var-get last-ride-id) u1))
       (fare (* distance u10)) ;; Simplified fare calculation
-      (available-vehicle (get-available-vehicle))
+      (current-last-vehicle-id (var-get last-vehicle-id))
     )
-    (asserts! (is-some available-vehicle) err-not-found)
+    (asserts! (> current-last-vehicle-id u0) err-not-found)
     (let
       (
-        (vehicle-id (unwrap-panic available-vehicle))
+        (available-vehicle-id (try! (find-available-vehicle)))
       )
-      (map-set rides { ride-id: new-ride-id }
-        {
-          passenger: tx-sender,
-          vehicle-id: vehicle-id,
-          start-location: start-location,
-          end-location: end-location,
-          distance: distance,
-          fare: fare,
-          status: "in-progress"
-        }
-      )
-      (map-set vehicles { vehicle-id: vehicle-id }
-        (merge (unwrap-panic (map-get? vehicles { vehicle-id: vehicle-id }))
-          { status: "occupied" }
+      (create-ride
+        (tuple
+          (ride-id new-ride-id)
+          (vehicle-id available-vehicle-id)
+          (start start-location)
+          (end end-location)
+          (distance distance)
+          (fare fare)
         )
       )
       (var-set last-ride-id new-ride-id)
@@ -104,14 +98,50 @@
   )
 )
 
-(define-private (get-available-vehicle)
-  (fold check-vehicle-availability (map-to-list vehicles) none)
+(define-private (create-ride (ride-info (tuple (ride-id uint) (vehicle-id uint) (start (string-ascii 50)) (end (string-ascii 50)) (distance uint) (fare uint))))
+  (let
+    (
+      (ride-id (get ride-id ride-info))
+      (vehicle-id (get vehicle-id ride-info))
+    )
+    (map-set rides { ride-id: ride-id }
+      {
+        passenger: tx-sender,
+        vehicle-id: vehicle-id,
+        start-location: (get start ride-info),
+        end-location: (get end ride-info),
+        distance: (get distance ride-info),
+        fare: (get fare ride-info),
+        status: "in-progress"
+      }
+    )
+    (map-set vehicles { vehicle-id: vehicle-id }
+      (merge (unwrap-panic (map-get? vehicles { vehicle-id: vehicle-id }))
+        { status: "occupied" }
+      )
+    )
+    true
+  )
 )
 
-(define-private (check-vehicle-availability (entry {vehicle-id: uint, vehicle: (tuple (owner principal) (status (string-ascii 20)) (mileage uint) (last-maintenance uint) (earnings uint))}) (result (optional uint)))
-  (if (and (is-none result) (is-eq (get status (get vehicle entry)) "available"))
-    (some (get vehicle-id entry))
+(define-private (find-available-vehicle)
+  (let
+    (
+      (last-id (var-get last-vehicle-id))
+    )
+    (ok (unwrap! (fold check-vehicle-availability (list u1 u2 u3 u4 u5 u6 u7 u8 u9 u10) none) err-not-found))
+  )
+)
+
+(define-private (check-vehicle-availability (id uint) (result (optional uint)))
+  (if (is-some result)
     result
+    (match (map-get? vehicles { vehicle-id: id })
+      vehicle (if (is-eq (get status vehicle) "available")
+                (some id)
+                none)
+      none
+    )
   )
 )
 
